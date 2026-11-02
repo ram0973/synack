@@ -1,5 +1,7 @@
 # Synack
 
+**Живёт тут:** <https://82.24.174.152.nip.io>
+
 ![CI](https://github.com/ram0973/synack/actions/workflows/ci.yml/badge.svg)
 
 Личная база знаний: дерево категорий, статьи в Markdown, поиск, история версий.
