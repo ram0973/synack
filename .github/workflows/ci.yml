@@ -16,6 +16,12 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      # rust-embed требует, чтобы папка со SPA существовала на этапе компиляции
+      - name: Stub SPA build
+        run: |
+          mkdir -p dashboard/build
+          printf '<!doctype html><meta charset="utf-8"><title>stub</title>' > dashboard/build/index.html
+
       - name: Tests
         run: cargo test --all-targets
 
