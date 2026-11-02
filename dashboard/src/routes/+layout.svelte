@@ -226,12 +226,17 @@ import { wikiHref } from '$lib/paths';
 								<span>Вики</span>
 							</Sidebar.MenuButton>
 						</Sidebar.MenuItem>
-						<Sidebar.MenuItem>
-							<Sidebar.MenuButton isActive={current === '/admin'} onclick={() => goto('/admin')}>
-								<Settings />
-								<span>Админка</span>
-							</Sidebar.MenuButton>
-						</Sidebar.MenuItem>
+						{#if auth.value}
+							<Sidebar.MenuItem>
+								<Sidebar.MenuButton
+									isActive={current === '/admin' || current.startsWith('/admin/')}
+									onclick={() => goto('/admin')}
+								>
+									<Settings />
+									<span>Админка</span>
+								</Sidebar.MenuButton>
+							</Sidebar.MenuItem>
+						{/if}
 					</Sidebar.Menu>
 				</Sidebar.GroupContent>
 			</Sidebar.Group>
