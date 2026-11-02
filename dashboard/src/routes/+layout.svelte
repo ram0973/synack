@@ -1,5 +1,6 @@
 <script lang="ts">
 import { wikiHref } from '$lib/paths';
+import SidebarAutoclose from '$lib/components/sidebar-autoclose.svelte';
 	import '@fontsource-variable/inter';
 	import '../app.css';
 	import { goto } from '$app/navigation';
@@ -175,6 +176,7 @@ import { wikiHref } from '$lib/paths';
 <Toaster position="bottom-right" />
 
 <Sidebar.Provider style="--sidebar-width: 15.5rem">
+	<SidebarAutoclose />
 	<Sidebar.Root collapsible="offcanvas" class="border-r">
 		<Sidebar.Header>
 			<a
