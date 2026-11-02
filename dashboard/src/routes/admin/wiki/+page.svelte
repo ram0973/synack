@@ -117,8 +117,7 @@
 
 <div class="flex items-start justify-between gap-4">
 	<div>
-		<h1 class="text-2xl font-semibold tracking-tight">Админка</h1>
-		<p class="mt-1 text-sm text-muted-foreground">Категории и страницы.</p>
+		<h1 class="text-3xl font-semibold tracking-tight">Категории</h1>
 	</div>
 	<div class="flex items-center gap-2">
 		<Button variant="outline" onclick={newPage}>
@@ -138,7 +137,7 @@
 	</div>
 {/if}
 
-<Card.Root class="mt-8 overflow-hidden py-0">
+<Card.Root class="mt-6 overflow-hidden py-0">
 	<Card.Content class="p-0">
 		{#if loading}
 			<div class="space-y-2 p-4">
@@ -204,7 +203,7 @@
 	</Card.Content>
 </Card.Root>
 
-<div class="mt-10 flex items-center justify-between">
+<div class="mt-8 flex items-center justify-between">
 	<h2 class="text-lg font-semibold tracking-tight">Страницы</h2>
 	<span class="text-xs text-muted-foreground">{pages.length}</span>
 </div>
