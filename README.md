@@ -1,5 +1,7 @@
 # Synack
 
+![CI](https://github.com/ram0973/synack/actions/workflows/ci.yml/badge.svg)
+
 Личная база знаний: дерево категорий, статьи в Markdown, поиск, история версий.
 Один автор, без внешних сервисов — Rust-бинарник, SQLite и статика.
 
