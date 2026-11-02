@@ -40,7 +40,6 @@
 		</div>
 		<div>
 			<h1 class="text-lg font-semibold tracking-tight">Вход</h1>
-			<p class="text-xs text-muted-foreground">Пароль задаётся переменной WIKI_PASSWORD</p>
 		</div>
 	</div>
 
