@@ -1,0 +1,5 @@
+# Замени домен на свой — Caddy сам получит и продлит сертификат.
+synack.example.com {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:3000
+}

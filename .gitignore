@@ -1,0 +1,17 @@
+/target
+/dashboard/node_modules
+/dashboard/build
+/dashboard/.svelte-kit
+/dashboard/static/.vite
+
+/wiki.db
+/wiki.db-shm
+/wiki.db-wal
+/media/
+*.log
+.env
+.DS_Store
+
+/e2e/results
+/test-results
+/playwright-report

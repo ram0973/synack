@@ -1,0 +1,24 @@
+[Unit]
+Description=Synack wiki
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=synack
+Group=synack
+WorkingDirectory=/var/lib/synack
+EnvironmentFile=/etc/synack/synack.env
+ExecStart=/opt/synack/wiki
+Restart=on-failure
+RestartSec=2
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/synack
+LimitNOFILE=4096
+
+[Install]
+WantedBy=multi-user.target
