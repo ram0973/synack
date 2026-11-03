@@ -17,6 +17,7 @@ use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePool, SqlitePo
 mod auth;
 mod error;
 mod media;
+mod settings;
 mod wiki;
 
 #[tokio::main]
@@ -52,6 +53,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/media/{*path}", get(media::serve))
         .route("/api/auth/login", post(auth::login))
         .route("/api/auth/password", post(auth::change_password))
+        .route(
+            "/api/settings",
+            get(settings::get_settings).put(settings::update_settings),
+        )
         .route("/api/auth/logout", post(auth::logout))
         .route("/api/auth/me", get(auth::me))
         .nest("/api/wiki", wiki::router())

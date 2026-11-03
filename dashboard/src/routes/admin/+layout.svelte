@@ -35,6 +35,13 @@
 		{/each}
 	</div>
 
+	<a
+		href="/admin/settings"
+		class="ml-auto {tabClass(current.startsWith('/admin/settings'))}"
+	>
+		Настройки
+	</a>
+
 	{#if sections.length}
 		<nav class="flex items-center gap-1" aria-label="Разделы приложения">
 			{#each sections as section (section.href)}

@@ -42,6 +42,11 @@ export type SearchHit = {
 	snippet: string;
 };
 
+export type SiteSettings = {
+	author_name: string;
+	author_avatar: string;
+};
+
 export type RevisionSummary = {
 	id: number;
 	title: string;
@@ -113,6 +118,9 @@ export const api = {
 			body: JSON.stringify({ body_md })
 		}),
 	me: () => request<{ authenticated: boolean; default_password: boolean }>('/api/auth/me'),
+	settings: () => request<SiteSettings>('/api/settings'),
+	updateSettings: (body: Partial<SiteSettings>) =>
+		request<SiteSettings>('/api/settings', { method: 'PUT', body: JSON.stringify(body) }),
 	search: (q: string) => request<SearchHit[]>('/api/wiki/search?q=' + encodeURIComponent(q)),
 	revisions: (pageId: number) =>
 		request<RevisionSummary[]>('/api/wiki/pages/' + pageId + '/revisions'),

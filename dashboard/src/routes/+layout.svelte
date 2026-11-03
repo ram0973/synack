@@ -26,12 +26,13 @@ import SidebarAutoclose from '$lib/components/sidebar-autoclose.svelte';
 		Sun,
 		Terminal
 	} from '@lucide/svelte';
-	import { api, type CategoryNode, type PageSummary } from '$lib/api';
+	import { api, type CategoryNode, type PageSummary, type SiteSettings } from '$lib/api';
 	import { auth } from '$lib/auth.svelte';
 
 	let { children } = $props();
 
 	let tree = $state<CategoryNode[]>([]);
+	let site = $state<SiteSettings>({ author_name: '', author_avatar: '' });
 	let pages = $state<PageSummary[]>([]);
 	let error = $state('');
 	let searchTerm = $state('');
@@ -51,7 +52,8 @@ import SidebarAutoclose from '$lib/components/sidebar-autoclose.svelte';
 
 	async function load() {
 		try {
-			const [t, p] = await Promise.all([api.tree(), api.pages()]);
+			const [t, p, s] = await Promise.all([api.tree(), api.pages(), api.settings()]);
+			site = s;
 			tree = t;
 			pages = p;
 			error = '';
@@ -298,7 +300,26 @@ import SidebarAutoclose from '$lib/components/sidebar-autoclose.svelte';
 
 		<Sidebar.Footer>
 			<div class="flex items-center justify-between px-1 py-1">
-				<span class="text-[11px] text-muted-foreground">v0.1.0</span>
+				{#if site.author_name || site.author_avatar}
+					<div class="flex min-w-0 items-center gap-2">
+						{#if site.author_avatar}
+							<img
+								src={site.author_avatar}
+								alt=""
+								class="size-6 shrink-0 rounded-full object-cover"
+							/>
+						{:else}
+							<div
+								class="flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-medium uppercase"
+							>
+								{site.author_name.slice(0, 2)}
+							</div>
+						{/if}
+						<span class="truncate text-[11px] text-muted-foreground">{site.author_name}</span>
+					</div>
+				{:else}
+					<span class="text-[11px] text-muted-foreground">v0.1.0</span>
+				{/if}
 				<div class="flex items-center gap-1">
 					<Button
 						variant="ghost"
@@ -320,7 +341,7 @@ import SidebarAutoclose from '$lib/components/sidebar-autoclose.svelte';
 							size="icon"
 							class="size-7"
 							title="Пароль"
-							onclick={() => goto('/admin/password')}
+							onclick={() => goto('/admin/settings')}
 						>
 							<KeyRound class="size-4" />
 						</Button>
@@ -355,6 +376,8 @@ import SidebarAutoclose from '$lib/components/sidebar-autoclose.svelte';
 						? 'Редактор'
 						: current.startsWith('/admin/wiki/pages')
 							? 'Страницы'
+						: current.startsWith('/admin/settings')
+						? 'Настройки'
 						: current.startsWith('/admin/password')
 							? 'Пароль'
 							: current.startsWith('/admin')
