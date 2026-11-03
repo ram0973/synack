@@ -221,6 +221,7 @@ import SidebarAutoclose from '$lib/components/sidebar-autoclose.svelte';
 								<span>Главная</span>
 							</Sidebar.MenuButton>
 						</Sidebar.MenuItem>
+
 						<Sidebar.MenuItem>
 							<Sidebar.MenuButton
 								isActive={current === '/wiki' || current.startsWith('/wiki/')}
@@ -229,8 +230,63 @@ import SidebarAutoclose from '$lib/components/sidebar-autoclose.svelte';
 								<BookOpen />
 								<span>Вики</span>
 							</Sidebar.MenuButton>
+
+							<Sidebar.MenuSub class="border-0 pl-1">
+								{#each entries as entry (entry.kind + '-' + entry.id)}
+									<Sidebar.MenuSubItem>
+										{#if entry.kind === 'category'}
+											<Sidebar.MenuSubButton
+												isActive={current === '/wiki/' + entry.path}
+												href={wikiHref(entry.path)}
+												style={'padding-left: ' + (4 + entry.depth * 12) + 'px'}
+											>
+												<Folder class="size-4 shrink-0 text-muted-foreground" />
+												<span class="truncate">{entry.name}</span>
+											</Sidebar.MenuSubButton>
+
+											{#if entry.hasChildren}
+												<Sidebar.MenuAction
+													title={isOpen(entry.id, entry.path) ? 'Свернуть' : 'Развернуть'}
+													aria-expanded={isOpen(entry.id, entry.path)}
+													onclick={() => toggleCategory(entry.id, entry.parentId)}
+												>
+													{#if isOpen(entry.id, entry.path)}
+														<ChevronDown />
+													{:else}
+														<ChevronRight />
+													{/if}
+												</Sidebar.MenuAction>
+											{/if}
+										{:else}
+											<Sidebar.MenuSubButton
+												isActive={current === '/' + entry.path}
+												href={wikiHref(entry.path)}
+												style={'padding-left: ' + (4 + entry.depth * 12) + 'px'}
+											>
+												<FileText class="size-4 shrink-0 text-muted-foreground" />
+												<span class="truncate">{entry.title}</span>
+											</Sidebar.MenuSubButton>
+										{/if}
+									</Sidebar.MenuSubItem>
+								{/each}
+
+								{#if !entries.length && !error}
+									<p class="px-2 py-1 text-xs text-muted-foreground">пока пусто</p>
+								{/if}
+								{#if error}
+									<p class="px-2 py-1 text-xs text-destructive">{error}</p>
+								{/if}
+							</Sidebar.MenuSub>
 						</Sidebar.MenuItem>
-						{#if auth.value}
+					</Sidebar.Menu>
+				</Sidebar.GroupContent>
+			</Sidebar.Group>
+
+			{#if auth.value}
+				<Sidebar.Group class="mt-auto">
+					<Sidebar.Separator class="mb-2" />
+					<Sidebar.GroupContent>
+						<Sidebar.Menu>
 							<Sidebar.MenuItem>
 								<Sidebar.MenuButton
 									isActive={current === '/admin' || current.startsWith('/admin/')}
@@ -240,62 +296,10 @@ import SidebarAutoclose from '$lib/components/sidebar-autoclose.svelte';
 									<span>Админка</span>
 								</Sidebar.MenuButton>
 							</Sidebar.MenuItem>
-						{/if}
-					</Sidebar.Menu>
-				</Sidebar.GroupContent>
-			</Sidebar.Group>
-
-			<Sidebar.Group>
-				<Sidebar.GroupLabel>Категории</Sidebar.GroupLabel>
-				<Sidebar.GroupContent>
-					<Sidebar.Menu>
-						{#each entries as entry (entry.kind + '-' + entry.id)}
-							<Sidebar.MenuItem>
-								{#if entry.kind === 'category'}
-									<Sidebar.MenuButton
-										isActive={current === '/wiki/' + entry.path}
-										onclick={() => toggleCategory(entry.id, entry.parentId)}
-										style={'padding-left: ' + (8 + entry.depth * 12) + 'px'}
-									>
-										<Folder class="size-4 shrink-0 text-muted-foreground" />
-										<span class="truncate">{entry.name}</span>
-									</Sidebar.MenuButton>
-
-									{#if entry.hasChildren}
-										<Sidebar.MenuAction
-											title={isOpen(entry.id, entry.path) ? 'Свернуть' : 'Развернуть'}
-											aria-expanded={isOpen(entry.id, entry.path)}
-											onclick={() => toggleCategory(entry.id, entry.parentId)}
-										>
-											{#if isOpen(entry.id, entry.path)}
-												<ChevronDown />
-											{:else}
-												<ChevronRight />
-											{/if}
-										</Sidebar.MenuAction>
-									{/if}
-								{:else}
-									<Sidebar.MenuButton
-										isActive={current === '/' + entry.path}
-										onclick={() => goto(wikiHref(entry.path))}
-										style={'padding-left: ' + (8 + entry.depth * 12) + 'px'}
-									>
-										<FileText class="size-4 shrink-0 text-muted-foreground" />
-										<span class="truncate">{entry.title}</span>
-									</Sidebar.MenuButton>
-								{/if}
-							</Sidebar.MenuItem>
-						{/each}
-
-						{#if !entries.length && !error}
-							<p class="px-2 py-1 text-xs text-muted-foreground">пока пусто</p>
-						{/if}
-						{#if error}
-							<p class="px-2 py-1 text-xs text-destructive">{error}</p>
-						{/if}
-					</Sidebar.Menu>
-				</Sidebar.GroupContent>
-			</Sidebar.Group>
+						</Sidebar.Menu>
+					</Sidebar.GroupContent>
+				</Sidebar.Group>
+			{/if}
 		</Sidebar.Content>
 
 		<Sidebar.Footer>
