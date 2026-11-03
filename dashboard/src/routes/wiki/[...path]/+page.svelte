@@ -4,7 +4,6 @@ import { wikiHref } from '$lib/paths';
 	import { page } from '$app/state';
 	import Breadcrumbs from '$lib/components/breadcrumbs.svelte';
 	import * as Card from '$lib/components/ui/card/index.js';
-	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
 	import { Pencil } from '@lucide/svelte';
@@ -79,12 +78,6 @@ import { wikiHref } from '$lib/paths';
 		<div class="mt-6 flex items-start justify-between gap-4">
 			<div>
 				<h1 class="text-2xl font-semibold tracking-tight">{doc.title}</h1>
-				<div class="mt-2 flex items-center gap-2">
-					<Badge variant={doc.status === 'published' ? 'default' : 'outline'}>
-						{doc.status === 'published' ? 'опубликовано' : 'черновик'}
-					</Badge>
-					<span class="text-xs text-muted-foreground">{doc.path}</span>
-				</div>
 			</div>
 			<Button variant="outline" onclick={() => goto('/admin/wiki/page/' + doc!.id)}>
 				<Pencil class="size-4" />
@@ -109,10 +102,12 @@ import { wikiHref } from '$lib/paths';
 		{#if category.children.length}
 			<div class="mt-6 grid gap-3 sm:grid-cols-2">
 				{#each category.children as child (child.id)}
-					<a href={wikiHref(category.path + '/' + child.slug)} class="block no-underline">
-						<Card.Root class="transition-colors hover:bg-accent/50">
+					<a href={wikiHref(category.path + '/' + child.slug)} class="group block no-underline">
+						<Card.Root class="transition-colors group-hover:border-primary/40 group-hover:bg-accent/50">
 							<Card.Header>
-								<Card.Title class="text-base">{child.name}</Card.Title>
+								<Card.Title class="link-title text-base">
+									{child.name}
+								</Card.Title>
 							</Card.Header>
 						</Card.Root>
 					</a>
@@ -123,13 +118,12 @@ import { wikiHref } from '$lib/paths';
 		{#if category.pages.length}
 			<div class="mt-4 space-y-2">
 				{#each category.pages as item (item.id)}
-					<a href={wikiHref(category.path + '/' + item.slug)} class="block no-underline">
-						<Card.Root class="transition-colors hover:bg-accent/50">
-							<Card.Content class="flex items-center justify-between py-3">
-								<span class="text-sm font-medium">{item.title}</span>
-								<Badge variant={item.status === 'published' ? 'default' : 'outline'}>
-									{item.status === 'published' ? 'опубликовано' : 'черновик'}
-								</Badge>
+					<a href={wikiHref(category.path + '/' + item.slug)} class="group block no-underline">
+						<Card.Root class="transition-colors group-hover:border-primary/40 group-hover:bg-accent/50">
+							<Card.Content class="py-3">
+								<span class="link-title text-sm font-medium">
+									{item.title}
+								</span>
 							</Card.Content>
 						</Card.Root>
 					</a>

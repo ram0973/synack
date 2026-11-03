@@ -3,7 +3,6 @@ import { wikiHref } from '$lib/paths';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import * as Card from '$lib/components/ui/card/index.js';
-	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
 	import { Folder, Plus } from '@lucide/svelte';
@@ -89,17 +88,13 @@ import { wikiHref } from '$lib/paths';
 
 	<div class="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
 		{#each pages as item (item.id)}
-			<a href={href(item)} class="block no-underline">
-				<Card.Root class="h-full transition-colors hover:bg-accent/50">
-					<Card.Header class="gap-1.5">
-						<Card.Title class="text-base">{item.title}</Card.Title>
-						<Card.Description class="text-xs">{href(item)}</Card.Description>
+			<a href={href(item)} class="group block no-underline">
+				<Card.Root class="h-full transition-colors group-hover:border-primary/40 group-hover:bg-accent/50">
+					<Card.Header>
+						<Card.Title class="link-title text-base">
+							{item.title}
+						</Card.Title>
 					</Card.Header>
-					<Card.Content class="pt-0">
-						<Badge variant={item.status === 'published' ? 'default' : 'outline'}>
-							{item.status === 'published' ? 'опубликовано' : 'черновик'}
-						</Badge>
-					</Card.Content>
 				</Card.Root>
 			</a>
 		{/each}

@@ -3,7 +3,6 @@ import { wikiHref } from '$lib/paths';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import * as Card from '$lib/components/ui/card/index.js';
-	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Search } from '@lucide/svelte';
 	import { api, type SearchHit } from '$lib/api';
@@ -93,14 +92,13 @@ import { wikiHref } from '$lib/paths';
 		<p class="mt-6 text-xs text-muted-foreground">Найдено: {hits.length}</p>
 		<div class="mt-3 space-y-2">
 			{#each hits as hit (hit.id)}
-				<a href={wikiHref(hit.path)} class="block no-underline">
+				<a href={wikiHref(hit.path)} class="group block no-underline">
 					<Card.Root class="transition-colors hover:bg-accent/50">
 						<Card.Content class="space-y-1.5 py-4">
 							<div class="flex items-center gap-2">
-								<span class="text-sm font-medium">{hit.title}</span>
-								<Badge variant={hit.status === 'published' ? 'default' : 'outline'}>
-									{hit.status === 'published' ? 'опубликовано' : 'черновик'}
-								</Badge>
+								<span class="link-title text-sm font-medium">
+									{hit.title}
+								</span>
 							</div>
 							<div class="text-xs text-muted-foreground">{hit.path}</div>
 							<p class="text-[13px] leading-relaxed text-muted-foreground">

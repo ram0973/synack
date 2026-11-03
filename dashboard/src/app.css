@@ -40,6 +40,8 @@
 	--sidebar-border: oklch(0.922 0 0);
 	--sidebar-ring: oklch(0.708 0 0);
 
+	--link: #2563eb;
+
 	--code-bg: #f6f8fa;
 	--code-fg: #1f2328;
 	--code-border: #d0d7de;
@@ -290,9 +292,23 @@ mark {
 }
 
 .md a {
-	color: var(--foreground);
-	text-decoration: underline;
+	color: var(--link);
+	text-decoration: none;
 	text-underline-offset: 2px;
+}
+
+.md a:hover {
+	text-decoration: underline;
+}
+
+/* Заголовок карточки-ссылки синеет при наведении на всю карточку */
+.link-title {
+	transition: color 0.15s ease;
+}
+
+.group:hover .link-title,
+a:hover > * .link-title {
+	color: var(--link);
 }
 
 .md img {
@@ -403,6 +419,8 @@ mark {
 	--sidebar-accent-foreground: oklch(0.985 0 0);
 	--sidebar-border: oklch(1 0 0 / 10%);
 	--sidebar-ring: oklch(0.556 0 0);
+
+	--link: #60a5fa;
 
 	--code-bg: #161b22;
 	--code-fg: #e6edf3;
