@@ -5,16 +5,14 @@
 	import * as Card from '$lib/components/ui/card/index.js';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
 	import { ArrowDown, ArrowUp, Ellipsis, FilePlus, Folder, Pencil, Plus, Trash2 } from '@lucide/svelte';
-	import { api, treeRows, type CategoryNode, type PageSummary } from '$lib/api';
+	import { api, treeRows, type CategoryNode } from '$lib/api';
 	import { auth } from '$lib/auth.svelte';
 
 	let tree = $state<CategoryNode[]>([]);
-	let pages = $state<PageSummary[]>([]);
 	let error = $state('');
 	let loading = $state(true);
 
@@ -26,9 +24,7 @@
 
 	async function reload() {
 		try {
-			const [t, p] = await Promise.all([api.tree(), api.pages()]);
-			tree = t;
-			pages = p;
+			tree = await api.tree();
 			error = '';
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'ошибка';
@@ -109,10 +105,6 @@
 		}, 'Порядок обновлён');
 	}
 
-	function newPage() {
-		const first = rows[0]?.node.id;
-		goto(first ? '/admin/wiki/page/new?category=' + first : '/admin/wiki/page/new');
-	}
 </script>
 
 <div class="flex items-start justify-between gap-4">
@@ -120,10 +112,6 @@
 		<h1 class="text-3xl font-semibold tracking-tight">Категории</h1>
 	</div>
 	<div class="flex items-center gap-2">
-		<Button variant="outline" onclick={newPage}>
-			<Plus class="size-4" />
-			Новая страница
-		</Button>
 		<Button onclick={() => openCreate(null)}>
 			<Plus class="size-4" />
 			Новая категория
@@ -199,30 +187,6 @@
 			{#if !rows.length}
 				<p class="px-4 py-8 text-center text-sm text-muted-foreground">Категорий пока нет.</p>
 			{/if}
-		{/if}
-	</Card.Content>
-</Card.Root>
-
-<div class="mt-8 flex items-center justify-between">
-	<h2 class="text-lg font-semibold tracking-tight">Страницы</h2>
-	<span class="text-xs text-muted-foreground">{pages.length}</span>
-</div>
-
-<Card.Root class="mt-3 overflow-hidden py-0">
-	<Card.Content class="p-0">
-		{#each pages as item (item.id)}
-			<div class="flex items-center gap-3 border-b px-4 py-2 last:border-b-0">
-				<span class="flex-1 truncate text-sm">{item.title}</span>
-				<Badge variant={item.status === 'published' ? 'default' : 'outline'}>
-					{item.status === 'published' ? 'опубликовано' : 'черновик'}
-				</Badge>
-				<Button size="sm" variant="outline" onclick={() => goto('/admin/wiki/page/' + item.id)}>
-					Открыть
-				</Button>
-			</div>
-		{/each}
-		{#if !pages.length}
-			<p class="px-4 py-8 text-center text-sm text-muted-foreground">Страниц пока нет.</p>
 		{/if}
 	</Card.Content>
 </Card.Root>

@@ -351,14 +351,18 @@ import SidebarAutoclose from '$lib/components/sidebar-autoclose.svelte';
 			<span class="text-sm font-medium text-muted-foreground">
 				{current === '/'
 					? 'Главная'
-					: current.startsWith('/admin/wiki/page')
+					: current.startsWith('/admin/wiki/page/')
 						? 'Редактор'
+						: current.startsWith('/admin/wiki/pages')
+							? 'Страницы'
 						: current.startsWith('/admin/password')
 							? 'Пароль'
 							: current.startsWith('/admin')
 								? 'Админка'
 								: current.startsWith('/wiki/search')
 									? 'Поиск'
+									: current.startsWith('/wiki')
+										? 'Вики'
 									: current.startsWith('/login')
 										? 'Вход'
 										: 'Статья'}
