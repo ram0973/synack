@@ -374,13 +374,17 @@ import SidebarAutoclose from '$lib/components/sidebar-autoclose.svelte';
 					? 'Главная'
 					: current.startsWith('/admin/wiki/page/')
 						? 'Редактор'
+						: current.startsWith('/admin/blog')
+							? 'Блог'
 						: current.startsWith('/admin/wiki/pages')
 							? 'Страницы'
 						: current.startsWith('/admin/settings')
 						? 'Настройки'
 						: current.startsWith('/admin/password')
 							? 'Пароль'
-							: current.startsWith('/admin')
+							: current.startsWith('/admin/wiki')
+									? 'Вики'
+									: current.startsWith('/admin')
 								? 'Админка'
 								: current.startsWith('/wiki/search')
 									? 'Поиск'

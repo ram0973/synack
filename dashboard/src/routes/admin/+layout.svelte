@@ -3,8 +3,12 @@
 
 	let { children } = $props();
 
-	// Сюда добавляются новые приложения: блог, страницы и т.д.
-	const apps = [{ href: '/admin/wiki', label: 'Вики' }];
+	// Приложения админки: каждое — отдельная страница.
+	const apps = [
+		{ href: '/admin/wiki', label: 'Вики' },
+		{ href: '/admin/blog', label: 'Блог' },
+		{ href: '/admin/settings', label: 'Настройки' }
+	];
 
 	const current = $derived(page.url.pathname);
 
@@ -15,7 +19,8 @@
 					{
 						href: '/admin/wiki/pages',
 						label: 'Страницы',
-						match: (path: string) => path.startsWith('/admin/wiki/pages') || path.startsWith('/admin/wiki/page/')
+						match: (path: string) =>
+							path.startsWith('/admin/wiki/pages') || path.startsWith('/admin/wiki/page/')
 					}
 				]
 			: []
@@ -28,19 +33,12 @@
 	}
 </script>
 
-<div class="mb-7 flex flex-wrap items-center gap-3">
-	<div class="inline-flex items-center rounded-lg border border-border bg-muted/50 p-0.5">
+<div class="mb-7 flex flex-col gap-3">
+	<div class="inline-flex w-fit items-center rounded-lg border border-border bg-muted/50 p-0.5">
 		{#each apps as app (app.href)}
 			<a href={app.href} class={tabClass(current.startsWith(app.href))}>{app.label}</a>
 		{/each}
 	</div>
-
-	<a
-		href="/admin/settings"
-		class="ml-auto {tabClass(current.startsWith('/admin/settings'))}"
-	>
-		Настройки
-	</a>
 
 	{#if sections.length}
 		<nav class="flex items-center gap-1" aria-label="Разделы приложения">
