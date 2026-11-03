@@ -12,7 +12,6 @@ import SidebarAutoclose from '$lib/components/sidebar-autoclose.svelte';
 	import { Toaster } from '$lib/components/ui/sonner/index.js';
 	import {
 		BookOpen,
-		ChevronDown,
 		ChevronRight,
 		FileText,
 		Folder,
@@ -267,28 +266,33 @@ import SidebarAutoclose from '$lib/components/sidebar-autoclose.svelte';
 										{#each section.entries as entry (section.key + '-' + entry.kind + '-' + entry.id)}
 											<Sidebar.MenuSubItem>
 												{#if entry.kind === 'category'}
-													<Sidebar.MenuSubButton
-														isActive={current === section.href + '/' + entry.path}
-														href={wikiHref(entry.path)}
-														style={'padding-left: ' + (4 + entry.depth * 12) + 'px'}
-													>
-														<Folder class="size-4 shrink-0 text-muted-foreground" />
-														<span class="truncate">{entry.name}</span>
-													</Sidebar.MenuSubButton>
-
-													{#if entry.hasChildren}
-														<Sidebar.MenuAction
-															title={isOpen(entry.id, entry.path) ? 'Свернуть' : 'Развернуть'}
-															aria-expanded={isOpen(entry.id, entry.path)}
+														<Sidebar.MenuSubButton
+															isActive={current === section.href + '/' + entry.path}
+															role="button"
+															tabindex={0}
+															aria-expanded={entry.hasChildren ? isOpen(entry.id, entry.path) : undefined}
 															onclick={() => toggleCategory(entry.id, entry.parentId)}
+															onkeydown={(event: KeyboardEvent) => {
+																if (event.key === 'Enter' || event.key === ' ') {
+																	event.preventDefault();
+																	toggleCategory(entry.id, entry.parentId);
+																}
+															}}
+															style={'padding-left: ' + (4 + entry.depth * 12) + 'px'}
 														>
-															{#if isOpen(entry.id, entry.path)}
-																<ChevronDown />
-															{:else}
-																<ChevronRight />
+															<Folder class="size-4 shrink-0 text-muted-foreground" />
+															<span class="truncate">{entry.name}</span>
+															{#if entry.hasChildren}
+																<ChevronRight
+																	class="ml-auto size-4 shrink-0 text-muted-foreground transition-transform duration-200 {isOpen(
+																		entry.id,
+																		entry.path
+																	)
+																		? 'rotate-90'
+																		: ''}"
+																/>
 															{/if}
-														</Sidebar.MenuAction>
-													{/if}
+														</Sidebar.MenuSubButton>
 												{:else}
 													<Sidebar.MenuSubButton
 														isActive={current === section.href + '/' + entry.path}
