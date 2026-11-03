@@ -4,7 +4,7 @@ use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
     routing::{get, patch, post},
-    Json, Router,
+    Extension, Json, Router,
 };
 use pulldown_cmark::{html, Event, Options, Parser, Tag, TagEnd};
 use serde::{Deserialize, Serialize};
@@ -12,7 +12,17 @@ use serde_json::{json, Value};
 use sqlx::sqlite::SqlitePool;
 use sqlx::FromRow;
 
+use crate::auth::Authenticated;
 use crate::error::AppError;
+
+type Viewer = Option<Extension<Authenticated>>;
+
+fn is_admin(viewer: &Viewer) -> bool {
+    viewer
+        .as_ref()
+        .map(|Extension(auth)| auth.0)
+        .unwrap_or(false)
+}
 
 pub fn router() -> Router<SqlitePool> {
     Router::<SqlitePool>::new()
@@ -107,8 +117,17 @@ struct UpdateCategory {
 
 #[derive(Debug, Deserialize)]
 struct MoveCategory {
-    parent_id: Option<i64>,
+    #[serde(default, deserialize_with = "deserialize_present")]
+    parent_id: Option<Option<i64>>,
     position: Option<i64>,
+}
+
+/// Поле отсутствует → None; поле `null` → Some(None); число → Some(Some(id)).
+fn deserialize_present<'de, D>(deserializer: D) -> Result<Option<Option<i64>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::<i64>::deserialize(deserializer).map(Some)
 }
 
 #[derive(Debug, Deserialize)]
@@ -134,7 +153,7 @@ struct ListPagesQuery {
     category: Option<i64>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct PathQuery {
     path: String,
 }
@@ -239,9 +258,14 @@ async fn move_category(
     Path(id): Path<i64>,
     Json(body): Json<MoveCategory>,
 ) -> Result<Json<Category>, AppError> {
-    find_category(&pool, id).await?;
+    let current = find_category(&pool, id).await?;
 
-    if let Some(parent_id) = body.parent_id {
+    let parent_id = match body.parent_id {
+        Some(value) => value,
+        None => current.parent_id,
+    };
+
+    if let Some(parent_id) = parent_id {
         if parent_id == id {
             return Err(AppError::bad_request("cannot move a category into itself"));
         }
@@ -255,14 +279,14 @@ async fn move_category(
 
     let position = match body.position {
         Some(position) => position,
-        None => next_position(&pool, body.parent_id).await?,
+        None => next_position(&pool, parent_id).await?,
     };
 
     let row = sqlx::query_as::<_, Category>(
         "UPDATE categories SET parent_id = ?, position = ? WHERE id = ?
          RETURNING id, parent_id, position, name, slug",
     )
-    .bind(body.parent_id)
+    .bind(parent_id)
     .bind(position)
     .bind(id)
     .fetch_one(&pool)
@@ -320,6 +344,7 @@ struct SearchHit {
 async fn search(
     State(pool): State<SqlitePool>,
     Query(query): Query<SearchQuery>,
+    viewer: Viewer,
 ) -> Result<Json<Vec<SearchHit>>, AppError> {
     let terms: Vec<String> = query
         .q
@@ -346,11 +371,12 @@ async fn search(
         "SELECT p.id, p.category_id, p.title, p.status, p.slug, p.body_md
          FROM pages_fts
          JOIN pages p ON p.id = pages_fts.rowid
-         WHERE pages_fts MATCH ?
+         WHERE pages_fts MATCH ? AND (? OR p.status = 'published')
          ORDER BY bm25(pages_fts, 5.0, 1.0)
          LIMIT 20",
     )
     .bind(match_query)
+    .bind(is_admin(&viewer))
     .fetch_all(&pool)
     .await?;
 
@@ -473,22 +499,29 @@ fn make_snippet(markdown: &str, terms: &[String]) -> String {
 async fn list_pages(
     State(pool): State<SqlitePool>,
     Query(query): Query<ListPagesQuery>,
+    viewer: Viewer,
 ) -> Result<Json<Vec<PageSummary>>, AppError> {
+    let admin = is_admin(&viewer);
+
     let rows = match query.category {
         Some(category_id) => {
             sqlx::query_as::<_, PageSummary>(
                 "SELECT id, category_id, slug, title, status, updated_at
-                 FROM pages WHERE category_id = ? ORDER BY title",
+                 FROM pages
+                 WHERE category_id = ? AND (? OR status = 'published')
+                 ORDER BY title",
             )
             .bind(category_id)
+            .bind(admin)
             .fetch_all(&pool)
             .await?
         }
         None => {
             sqlx::query_as::<_, PageSummary>(
                 "SELECT id, category_id, slug, title, status, updated_at
-                 FROM pages ORDER BY title",
+                 FROM pages WHERE (? OR status = 'published') ORDER BY title",
             )
+            .bind(admin)
             .fetch_all(&pool)
             .await?
         }
@@ -500,8 +533,13 @@ async fn list_pages(
 async fn get_page(
     State(pool): State<SqlitePool>,
     Path(id): Path<i64>,
+    viewer: Viewer,
 ) -> Result<Json<PageOut>, AppError> {
     let page = find_page(&pool, id).await?;
+
+    if !is_admin(&viewer) && page.status != "published" {
+        return Err(AppError::not_found("page not found"));
+    }
     let chain = category_chain(&pool, page.category_id).await?;
 
     Ok(Json(to_page_out(page, &chain)))
@@ -533,6 +571,8 @@ async fn create_page(
     let status = normalize_status(body.status.as_deref())?;
     let body_md = body.body_md.unwrap_or_default();
 
+    let mut tx = pool.begin().await?;
+
     let page = sqlx::query_as::<_, Page>(
         "INSERT INTO pages (category_id, slug, title, body_md, status)
          VALUES (?, ?, ?, ?, ?)
@@ -543,10 +583,11 @@ async fn create_page(
     .bind(&title)
     .bind(&body_md)
     .bind(&status)
-    .fetch_one(&pool)
+    .fetch_one(&mut *tx)
     .await?;
 
-    save_revision(&pool, &page).await?;
+    save_revision(&mut tx, &page).await?;
+    tx.commit().await?;
 
     Ok((StatusCode::CREATED, Json(to_page_out(page, &chain))))
 }
@@ -594,6 +635,8 @@ async fn update_page(
         None => current.status,
     };
 
+    let mut tx = pool.begin().await?;
+
     let page = sqlx::query_as::<_, Page>(
         "UPDATE pages
          SET category_id = ?, slug = ?, title = ?, body_md = ?, status = ?, updated_at = datetime('now')
@@ -606,10 +649,11 @@ async fn update_page(
     .bind(&body_md)
     .bind(&status)
     .bind(id)
-    .fetch_one(&pool)
+    .fetch_one(&mut *tx)
     .await?;
 
-    save_revision(&pool, &page).await?;
+    save_revision(&mut tx, &page).await?;
+    tx.commit().await?;
 
     let chain = category_chain(&pool, category_id).await?;
 
@@ -633,6 +677,7 @@ async fn delete_page(
 async fn page_by_path(
     State(pool): State<SqlitePool>,
     Query(query): Query<PathQuery>,
+    viewer: Viewer,
 ) -> Result<Json<PageOut>, AppError> {
     let raw = query.path.trim().trim_matches('/').to_string();
     if raw.is_empty() {
@@ -665,10 +710,12 @@ async fn page_by_path(
 
     let page = sqlx::query_as::<_, Page>(
         "SELECT id, category_id, slug, title, body_md, status, created_at, updated_at
-         FROM pages WHERE category_id = ? AND slug = ?",
+         FROM pages
+         WHERE category_id = ? AND slug = ? AND (? OR status = 'published')",
     )
     .bind(category_id)
     .bind(page_slug[0])
+    .bind(is_admin(&viewer))
     .fetch_optional(&pool)
     .await?
     .ok_or_else(|| AppError::not_found("page not found"))?;
@@ -699,6 +746,7 @@ async fn preview(Json(body): Json<PreviewRequest>) -> Json<Value> {
 async fn category_by_path(
     State(pool): State<SqlitePool>,
     Query(query): Query<PathQuery>,
+    viewer: Viewer,
 ) -> Result<Json<CategoryView>, AppError> {
     let raw = query.path.trim().trim_matches('/').to_string();
     let slugs: Vec<&str> = raw.split('/').filter(|part| !part.is_empty()).collect();
@@ -724,9 +772,12 @@ async fn category_by_path(
 
     let pages = sqlx::query_as::<_, PageSummary>(
         "SELECT id, category_id, slug, title, status, updated_at
-         FROM pages WHERE category_id = ? ORDER BY title",
+         FROM pages
+         WHERE category_id = ? AND (? OR status = 'published')
+         ORDER BY title",
     )
     .bind(category.id)
+    .bind(is_admin(&viewer))
     .fetch_all(&pool)
     .await?;
 
@@ -741,20 +792,29 @@ async fn category_by_path(
 async fn resolve_path(
     State(pool): State<SqlitePool>,
     Query(query): Query<PathQuery>,
+    viewer: Viewer,
 ) -> Result<Json<Value>, AppError> {
     let path = query.path.trim().trim_matches('/').to_string();
 
-    if let Ok(Json(page)) =
-        page_by_path(State(pool.clone()), Query(PathQuery { path: path.clone() })).await
+    match page_by_path(
+        State(pool.clone()),
+        Query(PathQuery { path: path.clone() }),
+        viewer.clone(),
+    )
+    .await
     {
-        return Ok(Json(json!({ "kind": "page", "page": page })));
+        Ok(Json(page)) => return Ok(Json(json!({ "kind": "page", "page": page }))),
+        Err(error)
+            if error.status == StatusCode::NOT_FOUND || error.status == StatusCode::BAD_REQUEST => {
+        }
+        Err(error) => return Err(error),
     }
 
-    if let Ok(Json(category)) = category_by_path(State(pool), Query(PathQuery { path })).await {
-        return Ok(Json(json!({ "kind": "category", "category": category })));
+    match category_by_path(State(pool), Query(PathQuery { path }), viewer).await {
+        Ok(Json(category)) => Ok(Json(json!({ "kind": "category", "category": category }))),
+        Err(error) if error.status == StatusCode::NOT_FOUND => Err(error),
+        Err(error) => Err(error),
     }
-
-    Err(AppError::not_found("not found"))
 }
 
 // ---------- вспомогательное ----------
@@ -777,12 +837,12 @@ struct Revision {
     created_at: String,
 }
 
-async fn save_revision(pool: &SqlitePool, page: &Page) -> Result<(), AppError> {
+async fn save_revision(executor: &mut sqlx::SqliteConnection, page: &Page) -> Result<(), AppError> {
     sqlx::query("INSERT INTO revisions (page_id, title, body_md) VALUES (?, ?, ?)")
         .bind(page.id)
         .bind(&page.title)
         .bind(&page.body_md)
-        .execute(pool)
+        .execute(executor)
         .await?;
 
     Ok(())
@@ -791,7 +851,12 @@ async fn save_revision(pool: &SqlitePool, page: &Page) -> Result<(), AppError> {
 async fn list_revisions(
     State(pool): State<SqlitePool>,
     Path(id): Path<i64>,
+    viewer: Viewer,
 ) -> Result<Json<Vec<RevisionSummary>>, AppError> {
+    if !is_admin(&viewer) {
+        return Err(AppError::new(StatusCode::UNAUTHORIZED, "unauthorized"));
+    }
+
     find_page(&pool, id).await?;
 
     let rows = sqlx::query_as::<_, (i64, String, String, i64, String)>(
@@ -822,7 +887,12 @@ async fn list_revisions(
 async fn get_revision(
     State(pool): State<SqlitePool>,
     Path(id): Path<i64>,
+    viewer: Viewer,
 ) -> Result<Json<Revision>, AppError> {
+    if !is_admin(&viewer) {
+        return Err(AppError::new(StatusCode::UNAUTHORIZED, "unauthorized"));
+    }
+
     let revision = sqlx::query_as::<_, Revision>(
         "SELECT id, page_id, title, body_md, created_at FROM revisions WHERE id = ?",
     )
@@ -848,6 +918,8 @@ async fn restore_revision(
 
     find_page(&pool, revision.page_id).await?;
 
+    let mut tx = pool.begin().await?;
+
     let page = sqlx::query_as::<_, Page>(
         "UPDATE pages SET title = ?, body_md = ?, updated_at = datetime('now')
          WHERE id = ?
@@ -856,10 +928,11 @@ async fn restore_revision(
     .bind(&revision.title)
     .bind(&revision.body_md)
     .bind(revision.page_id)
-    .fetch_one(&pool)
+    .fetch_one(&mut *tx)
     .await?;
 
-    save_revision(&pool, &page).await?;
+    save_revision(&mut tx, &page).await?;
+    tx.commit().await?;
 
     let chain = category_chain(&pool, page.category_id).await?;
 
@@ -1340,6 +1413,165 @@ mod tests {
     use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
     use std::str::FromStr;
 
+    #[tokio::test]
+    async fn move_without_parent_keeps_parent() {
+        let pool = test_pool().await;
+
+        let (_, Json(root)) = create_category(
+            State(pool.clone()),
+            Json(CreateCategory {
+                parent_id: None,
+                name: "Root".into(),
+                slug: None,
+            }),
+        )
+        .await
+        .unwrap();
+
+        let (_, Json(child)) = create_category(
+            State(pool.clone()),
+            Json(CreateCategory {
+                parent_id: Some(root.id),
+                name: "Child".into(),
+                slug: None,
+            }),
+        )
+        .await
+        .unwrap();
+
+        // передаём только position: родитель должен остаться прежним
+        let Json(moved) = move_category(
+            State(pool.clone()),
+            Path(child.id),
+            Json(MoveCategory {
+                parent_id: None,
+                position: Some(0),
+            }),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(moved.parent_id, Some(root.id));
+
+        // явный null — перенос в корень
+        let Json(moved) = move_category(
+            State(pool.clone()),
+            Path(child.id),
+            Json(MoveCategory {
+                parent_id: Some(None),
+                position: Some(0),
+            }),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(moved.parent_id, None);
+    }
+
+    #[tokio::test]
+    async fn draft_is_hidden_from_anonymous() {
+        let pool = test_pool().await;
+
+        let (_, Json(cat)) = create_category(
+            State(pool.clone()),
+            Json(CreateCategory {
+                parent_id: None,
+                name: "Notes".into(),
+                slug: None,
+            }),
+        )
+        .await
+        .unwrap();
+
+        create_page(
+            State(pool.clone()),
+            Json(CreatePage {
+                category_id: cat.id,
+                title: "Черновик".into(),
+                slug: Some("draft".into()),
+                body_md: Some("секретный текст".into()),
+                status: Some("draft".into()),
+            }),
+        )
+        .await
+        .unwrap();
+
+        let path = PathQuery {
+            path: "notes/draft".to_string(),
+        };
+
+        let anonymous = page_by_path(State(pool.clone()), Query(path.clone()), None).await;
+        assert!(matches!(anonymous, Err(error) if error.status == StatusCode::NOT_FOUND));
+
+        let admin = page_by_path(
+            State(pool.clone()),
+            Query(path),
+            Some(Extension(Authenticated(true))),
+        )
+        .await;
+        assert!(admin.is_ok());
+
+        let hits = search(
+            State(pool.clone()),
+            Query(SearchQuery {
+                q: "секретный".to_string(),
+            }),
+            None,
+        )
+        .await
+        .unwrap();
+        assert!(hits.0.is_empty(), "поиск не должен находить черновики");
+
+        let listed = list_pages(
+            State(pool.clone()),
+            Query(ListPagesQuery { category: None }),
+            None,
+        )
+        .await
+        .unwrap();
+        assert!(listed.0.is_empty(), "список не должен показывать черновики");
+    }
+
+    #[tokio::test]
+    async fn revisions_require_auth() {
+        let pool = test_pool().await;
+
+        let (_, Json(cat)) = create_category(
+            State(pool.clone()),
+            Json(CreateCategory {
+                parent_id: None,
+                name: "Notes".into(),
+                slug: None,
+            }),
+        )
+        .await
+        .unwrap();
+
+        let (_, Json(page)) = create_page(
+            State(pool.clone()),
+            Json(CreatePage {
+                category_id: cat.id,
+                title: "Page".into(),
+                slug: None,
+                body_md: Some("text".into()),
+                status: None,
+            }),
+        )
+        .await
+        .unwrap();
+
+        let anonymous = list_revisions(State(pool.clone()), Path(page.id), None).await;
+        assert!(matches!(anonymous, Err(error) if error.status == StatusCode::UNAUTHORIZED));
+
+        let admin = list_revisions(
+            State(pool.clone()),
+            Path(page.id),
+            Some(Extension(Authenticated(true))),
+        )
+        .await;
+        assert!(admin.is_ok());
+    }
+
     async fn test_pool() -> SqlitePool {
         let options = SqliteConnectOptions::from_str("sqlite::memory:").unwrap();
         let pool = SqlitePoolOptions::new()
@@ -1429,7 +1661,7 @@ mod tests {
             state.clone(),
             Path(a.id),
             Json(MoveCategory {
-                parent_id: Some(b.id),
+                parent_id: Some(Some(b.id)),
                 position: None,
             }),
         )
@@ -1477,7 +1709,7 @@ mod tests {
                 title: "Введение".into(),
                 body_md: Some("# Привет".into()),
                 slug: None,
-                status: None,
+                status: Some("published".into()),
             }),
         )
         .await
@@ -1491,6 +1723,7 @@ mod tests {
             Query(PathQuery {
                 path: "rust/vvedenie".into(),
             }),
+            None,
         )
         .await
         .unwrap();

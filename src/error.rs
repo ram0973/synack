@@ -48,6 +48,16 @@ impl std::error::Error for AppError {}
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
+        if self.status.is_server_error() {
+            tracing::error!("internal error: {}", self.message);
+
+            return (
+                self.status,
+                Json(json!({ "error": "internal server error" })),
+            )
+                .into_response();
+        }
+
         (self.status, Json(json!({ "error": self.message }))).into_response()
     }
 }
@@ -62,4 +72,3 @@ impl From<sqlx::Error> for AppError {
         AppError::new(StatusCode::INTERNAL_SERVER_ERROR, err.to_string())
     }
 }
-

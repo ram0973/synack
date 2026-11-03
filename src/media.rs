@@ -10,6 +10,7 @@ use axum::{
 use rand_core::RngCore;
 use serde::Serialize;
 use sqlx::sqlite::SqlitePool;
+use tokio::io::AsyncWriteExt;
 
 use crate::error::AppError;
 
@@ -70,21 +71,13 @@ pub async fn upload(
     Extension(dir): Extension<MediaDir>,
     mut multipart: Multipart,
 ) -> Result<Json<MediaOut>, AppError> {
-    while let Some(field) = multipart
+    while let Some(mut field) = multipart
         .next_field()
         .await
         .map_err(|error| AppError::bad_request(error.to_string()))?
     {
-        let filename = field.file_name().map(|name| name.to_string());
+        let filename = field.file_name().map(str::to_string);
         let content_type = field.content_type().map(|value| value.to_string());
-        let data = field
-            .bytes()
-            .await
-            .map_err(|error| AppError::bad_request(error.to_string()))?;
-
-        if data.is_empty() {
-            continue;
-        }
 
         let mime = detect_mime(filename.as_deref(), content_type.as_deref())
             .ok_or_else(|| AppError::bad_request("unsupported file type"))?;
@@ -94,13 +87,6 @@ pub async fn upload(
         } else {
             MAX_IMAGE_BYTES
         };
-
-        if data.len() > limit {
-            return Err(AppError::bad_request("file is too large"));
-        }
-
-        let extension = extension_for(&mime).expect("checked by detect_mime");
-        let name = random_name(extension);
 
         let (year, month): (String, String) =
             sqlx::query_as("SELECT strftime('%Y', 'now'), strftime('%m', 'now')")
@@ -112,23 +98,68 @@ pub async fn upload(
             .await
             .map_err(|error| AppError::internal(error.to_string()))?;
 
+        let extension = extension_for(&mime).expect("checked by detect_mime");
+        let name = random_name(extension);
         let relative = format!("{year}/{month}/{name}");
+        let path = dir.0.join(&relative);
 
-        tokio::fs::write(dir.0.join(&relative), &data)
+        let mut file = tokio::fs::File::create(&path)
             .await
             .map_err(|error| AppError::internal(error.to_string()))?;
+
+        let mut size: u64 = 0;
+
+        // читаем поле кусками, чтобы не держать файл в памяти и успеть остановиться на лимите
+        loop {
+            let chunk = match field.chunk().await {
+                Ok(Some(chunk)) => chunk,
+                Ok(None) => break,
+                Err(error) => {
+                    drop(file);
+                    let _ = tokio::fs::remove_file(&path).await;
+                    return Err(AppError::bad_request(error.to_string()));
+                }
+            };
+
+            size += chunk.len() as u64;
+
+            if size > limit as u64 {
+                drop(file);
+                let _ = tokio::fs::remove_file(&path).await;
+                return Err(AppError::bad_request("file is too large"));
+            }
+
+            if let Err(error) = file.write_all(&chunk).await {
+                drop(file);
+                let _ = tokio::fs::remove_file(&path).await;
+                return Err(AppError::internal(error.to_string()));
+            }
+        }
+
+        if let Err(error) = file.flush().await {
+            drop(file);
+            let _ = tokio::fs::remove_file(&path).await;
+            return Err(AppError::internal(error.to_string()));
+        }
+
+        drop(file);
+
+        if size == 0 {
+            let _ = tokio::fs::remove_file(&path).await;
+            continue;
+        }
 
         sqlx::query("INSERT INTO media (filename, mime, size) VALUES (?, ?, ?)")
             .bind(&relative)
             .bind(&mime)
-            .bind(data.len() as i64)
+            .bind(size as i64)
             .execute(&pool)
             .await?;
 
         return Ok(Json(MediaOut {
             url: format!("/media/{relative}"),
             name: relative,
-            size: data.len() as i64,
+            size: size as i64,
         }));
     }
 

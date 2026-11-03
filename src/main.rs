@@ -4,7 +4,7 @@ use std::str::FromStr;
 
 use axum::{
     body::Body,
-    extract::State,
+    extract::{DefaultBodyLimit, State},
     http::{header, HeaderValue, StatusCode, Uri},
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -16,8 +16,8 @@ use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePool, SqlitePo
 
 mod auth;
 mod error;
-mod wiki;
 mod media;
+mod wiki;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -45,7 +45,10 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         .route("/health", get(health))
-        .route("/api/media", post(media::upload))
+        .route(
+            "/api/media",
+            post(media::upload).layer(DefaultBodyLimit::max(210 * 1024 * 1024)),
+        )
         .route("/media/{*path}", get(media::serve))
         .route("/api/auth/login", post(auth::login))
         .route("/api/auth/password", post(auth::change_password))
@@ -153,4 +156,3 @@ async fn health(State(pool): State<SqlitePool>) -> Json<Value> {
 
     Json(json!({ "ok": ok, "version": env!("CARGO_PKG_VERSION") }))
 }
-

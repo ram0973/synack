@@ -16,6 +16,10 @@ use sqlx::sqlite::SqlitePool;
 
 use crate::error::AppError;
 
+/// Проставляется middleware: был ли запрос с валидной сессией.
+#[derive(Clone, Copy)]
+pub struct Authenticated(pub bool);
+
 #[derive(Debug, Deserialize)]
 pub struct ChangePassword {
     pub current: String,
@@ -198,6 +202,7 @@ pub async fn is_default_password(pool: &SqlitePool) -> Result<bool, AppError> {
 
 pub async fn login(
     State(pool): State<SqlitePool>,
+    headers: axum::http::HeaderMap,
     Json(body): Json<LoginRequest>,
 ) -> Result<Response, AppError> {
     let hash = stored_hash(&pool)
@@ -215,7 +220,16 @@ pub async fn login(
         .execute(&pool)
         .await?;
 
-    let cookie = format!("session={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000");
+    let secure = headers
+        .get("x-forwarded-proto")
+        .and_then(|value| value.to_str().ok())
+        .map(|value| value.eq_ignore_ascii_case("https"))
+        .unwrap_or(false);
+
+    let cookie = format!(
+        "session={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000{}",
+        if secure { "; Secure" } else { "" }
+    );
 
     let mut response = Json(json!({ "ok": true })).into_response();
     response.headers_mut().insert(
@@ -261,29 +275,30 @@ pub async fn me(State(pool): State<SqlitePool>, request: Request) -> Result<Json
 }
 
 /// Пропускает чтение всем, а любые изменения требует с валидной сессией.
-pub async fn auth_guard(State(pool): State<SqlitePool>, request: Request, next: Next) -> Response {
+pub async fn auth_guard(
+    State(pool): State<SqlitePool>,
+    mut request: Request,
+    next: Next,
+) -> Response {
     let method = request.method().clone();
+    let is_login = request.uri().path() == "/api/auth/login";
 
-    if request.uri().path() == "/api/auth/login"
-        || method == Method::GET
-        || method == Method::HEAD
-        || method == Method::OPTIONS
-    {
-        return next.run(request).await;
-    }
-
-    let allowed = match session_token(&request) {
+    let authenticated = match session_token(&request) {
         Some(token) => session_valid(&pool, &token).await.unwrap_or(false),
         None => false,
     };
 
-    if allowed {
-        next.run(request).await
-    } else {
-        (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({ "error": "unauthorized" })),
-        )
-            .into_response()
+    request
+        .extensions_mut()
+        .insert(Authenticated(authenticated));
+
+    if is_login || matches!(method, Method::GET | Method::HEAD | Method::OPTIONS) || authenticated {
+        return next.run(request).await;
     }
+
+    (
+        StatusCode::UNAUTHORIZED,
+        Json(json!({ "error": "unauthorized" })),
+    )
+        .into_response()
 }
