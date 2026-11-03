@@ -545,6 +545,42 @@ async fn get_page(
     Ok(Json(to_page_out(page, &chain)))
 }
 
+
+/// Проверяет уникальность заголовка и slug внутри категории.
+async fn ensure_unique_page(
+    pool: &SqlitePool,
+    category_id: i64,
+    title: &str,
+    slug: &str,
+    except_id: Option<i64>,
+) -> Result<(), AppError> {
+    let rows: Vec<(i64, String, String)> =
+        sqlx::query_as("SELECT id, title, slug FROM pages WHERE category_id = ?")
+            .bind(category_id)
+            .fetch_all(pool)
+            .await?;
+
+    let wanted = title.to_lowercase();
+
+    for (id, other_title, other_slug) in rows {
+        if Some(id) == except_id {
+            continue;
+        }
+
+        if other_title.to_lowercase() == wanted {
+            return Err(AppError::conflict(
+                "Страница с таким заголовком уже есть в этой категории",
+            ));
+        }
+
+        if other_slug == slug {
+            return Err(AppError::conflict("Такой slug уже занят в этой категории"));
+        }
+    }
+
+    Ok(())
+}
+
 async fn create_page(
     State(pool): State<SqlitePool>,
     Json(body): Json<CreatePage>,
@@ -570,6 +606,8 @@ async fn create_page(
 
     let status = normalize_status(body.status.as_deref())?;
     let body_md = body.body_md.unwrap_or_default();
+
+    ensure_unique_page(&pool, body.category_id, &title, &slug, None).await?;
 
     let mut tx = pool.begin().await?;
 
@@ -634,6 +672,8 @@ async fn update_page(
         Some(status) => normalize_status(Some(&status))?,
         None => current.status,
     };
+
+    ensure_unique_page(&pool, category_id, &title, &slug, Some(id)).await?;
 
     let mut tx = pool.begin().await?;
 
@@ -1570,6 +1610,130 @@ mod tests {
         )
         .await;
         assert!(admin.is_ok());
+    }
+
+    #[tokio::test]
+    async fn titles_and_slugs_are_unique_in_category() {
+        let pool = test_pool().await;
+
+        let (_, Json(notes)) = create_category(
+            State(pool.clone()),
+            Json(CreateCategory {
+                parent_id: None,
+                name: "Notes".into(),
+                slug: None,
+            }),
+        )
+        .await
+        .unwrap();
+
+        let (_, Json(other)) = create_category(
+            State(pool.clone()),
+            Json(CreateCategory {
+                parent_id: None,
+                name: "Other".into(),
+                slug: None,
+            }),
+        )
+        .await
+        .unwrap();
+
+        let (_, Json(first)) = create_page(
+            State(pool.clone()),
+            Json(CreatePage {
+                category_id: notes.id,
+                title: "Введение".into(),
+                slug: Some("intro".into()),
+                body_md: Some("текст".into()),
+                status: Some("published".into()),
+            }),
+        )
+        .await
+        .unwrap();
+
+        let duplicate_title = create_page(
+            State(pool.clone()),
+            Json(CreatePage {
+                category_id: notes.id,
+                title: "введение".into(),
+                slug: Some("intro-2".into()),
+                body_md: Some("текст".into()),
+                status: None,
+            }),
+        )
+        .await;
+        assert!(matches!(duplicate_title, Err(error) if error.status == StatusCode::CONFLICT));
+
+        let duplicate_slug = create_page(
+            State(pool.clone()),
+            Json(CreatePage {
+                category_id: notes.id,
+                title: "Другое".into(),
+                slug: Some("intro".into()),
+                body_md: Some("текст".into()),
+                status: None,
+            }),
+        )
+        .await;
+        assert!(matches!(duplicate_slug, Err(error) if error.status == StatusCode::CONFLICT));
+
+        // в другой категории те же title и slug допустимы
+        let same_in_other = create_page(
+            State(pool.clone()),
+            Json(CreatePage {
+                category_id: other.id,
+                title: "Введение".into(),
+                slug: Some("intro".into()),
+                body_md: Some("текст".into()),
+                status: None,
+            }),
+        )
+        .await;
+        assert!(same_in_other.is_ok());
+
+        // заводим страницу с заголовком «Другое», чтобы было с чем конфликтовать
+        let (_, Json(_)) = create_page(
+            State(pool.clone()),
+            Json(CreatePage {
+                category_id: notes.id,
+                title: "Другое".into(),
+                slug: Some("drugoe".into()),
+                body_md: Some("текст".into()),
+                status: None,
+            }),
+        )
+        .await
+        .unwrap();
+
+        // переименование в занятое имя — конфликт
+        let rename = update_page(
+            State(pool.clone()),
+            Path(first.id),
+            Json(UpdatePage {
+                category_id: None,
+                title: Some("Другое".into()),
+                slug: None,
+                body_md: None,
+                status: None,
+            }),
+        )
+        .await;
+        assert!(matches!(rename, Err(error) if error.status == StatusCode::CONFLICT));
+
+        // сохранение без изменений проходит
+        let same = update_page(
+            State(pool.clone()),
+            Path(first.id),
+            Json(UpdatePage {
+                category_id: None,
+                title: Some("Введение".into()),
+                slug: Some("intro".into()),
+                body_md: None,
+                status: None,
+            }),
+        )
+        .await;
+        assert!(same.is_ok());
     }
 
     async fn test_pool() -> SqlitePool {
