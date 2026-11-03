@@ -1,5 +1,13 @@
+# HTTP/3 (QUIC) выключен: в РФ его часто режет ТСПУ, и браузер падает
+# с «QUIC protocol error» вместо тихого отката на TCP.
+{
+	servers {
+		protocols h1 h2
+	}
+}
+
 # Замени домен на свой — Caddy сам получит и продлит сертификат.
-synack.example.com {
+82.24.174.152.nip.io {
 	encode zstd gzip
 	reverse_proxy 127.0.0.1:3000
 }

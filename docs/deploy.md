@@ -96,3 +96,58 @@ tar czf /var/backups/media-$(date +%F).tar.gz -C /var/lib/synack media
 - `permission denied` на базу — `chown -R synack:synack /var/lib/synack`.
 - Нет сертификата — проверь A-запись и что порт 80 открыт.
 - Порт занят — `ss -ltnp | grep :3000`.
+
+## CI/CD (GitHub Actions)
+
+- .github/workflows/ci.yml — на каждый push и PR: cargo test --all-targets, release-сборка,
+  un run check и un run build.
+- .github/workflows/deploy.yml — на push в main: собирает SPA и бинарник, прогоняет тесты,
+  заливает бинарник на сервер и перезапускает systemd-сервис.
+
+Включается переменной репозитория: Settings → Secrets and variables → Actions → **Variables** →
+DEPLOY_ENABLED = true.
+
+Секреты (Settings → Secrets and variables → Actions → **Secrets**):
+
+| Имя | Значение |
+|---|---|
+| DEPLOY_HOST | IP сервера |
+| DEPLOY_USER | 
+oot |
+| DEPLOY_KEY | приватный ed25519-ключ деплоя (публичный — в ~/.ssh/authorized_keys на сервере) |
+
+Пока DEPLOY_ENABLED не задана, workflow деплоя просто не запускается — CI продолжает работать.
+
+## Если ТСПУ режет QUIC
+
+Симптом: браузер пишет `QUIC protocol error`, сайт «не дышит», хотя TCP-порты отвечают.
+Caddy по умолчанию отдаёт HTTP/3 по UDP 443, а DPI в РФ часто его дропает — браузер
+не всегда успевает тихо откатиться на HTTP/2.
+
+В `/etc/caddy/Caddyfile` добавь глобальный блок (он уже есть в `deploy/Caddyfile`):
+
+```
+{
+	servers {
+		protocols h1 h2
+	}
+}
+```
+
+Применить:
+
+```bash
+caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+systemctl reload caddy
+```
+
+Проверка: в ответе не должно быть заголовка `Alt-Svc`:
+
+```bash
+curl -sI https://домен | grep -i alt-svc
+```
+
+Готовый скрипт: `./scripts/tests/disable-quic.sh` (заходит по SSH и правит Caddyfile).
+
+Пока сервер недоступен, в браузере можно выключить QUIC вручную:
+Chrome — `chrome://flags/#enable-quic` → Disabled, Firefox — `network.http.http3.enable = false`.
