@@ -21,6 +21,7 @@ import SidebarAutoclose from '$lib/components/sidebar-autoclose.svelte';
 		LogIn,
 		LogOut,
 		Moon,
+		NotebookPen,
 		Search,
 		Settings,
 		Sun,
@@ -139,6 +140,18 @@ import SidebarAutoclose from '$lib/components/sidebar-autoclose.svelte';
 
 	const entries = $derived(buildEntries(tree, 0, ''));
 
+	const sections = $derived([
+		{ key: 'wiki', label: 'Вики', href: '/wiki', ready: true, icon: BookOpen, entries },
+		{
+			key: 'blog',
+			label: 'Блог',
+			href: '/blog',
+			ready: false,
+			icon: NotebookPen,
+			entries: [] as Entry[]
+		}
+	]);
+
 	const parentOf = $derived.by(() => {
 		const map = new Map<number, number | null>();
 		const stack: CategoryNode[] = [...tree];
@@ -222,62 +235,70 @@ import SidebarAutoclose from '$lib/components/sidebar-autoclose.svelte';
 							</Sidebar.MenuButton>
 						</Sidebar.MenuItem>
 
-						<Sidebar.MenuItem>
-							<Sidebar.MenuButton
-								isActive={current === '/wiki' || current.startsWith('/wiki/')}
-								onclick={() => goto('/wiki')}
-							>
-								<BookOpen />
-								<span>Вики</span>
-							</Sidebar.MenuButton>
+						{#each sections as section (section.key)}
+							{@const Icon = section.icon}
+							<Sidebar.MenuItem>
+								{#if section.ready}
+									<Sidebar.MenuButton
+										isActive={current === section.href || current.startsWith(section.href + '/')}
+										onclick={() => goto(section.href)}
+									>
+										<Icon />
+										<span>{section.label}</span>
+									</Sidebar.MenuButton>
 
-							<Sidebar.MenuSub class="border-0 pl-1">
-								{#each entries as entry (entry.kind + '-' + entry.id)}
-									<Sidebar.MenuSubItem>
-										{#if entry.kind === 'category'}
-											<Sidebar.MenuSubButton
-												isActive={current === '/wiki/' + entry.path}
-												href={wikiHref(entry.path)}
-												style={'padding-left: ' + (4 + entry.depth * 12) + 'px'}
-											>
-												<Folder class="size-4 shrink-0 text-muted-foreground" />
-												<span class="truncate">{entry.name}</span>
-											</Sidebar.MenuSubButton>
+									<Sidebar.MenuSub class="border-0 pl-1">
+										{#each section.entries as entry (section.key + '-' + entry.kind + '-' + entry.id)}
+											<Sidebar.MenuSubItem>
+												{#if entry.kind === 'category'}
+													<Sidebar.MenuSubButton
+														isActive={current === section.href + '/' + entry.path}
+														href={wikiHref(entry.path)}
+														style={'padding-left: ' + (4 + entry.depth * 12) + 'px'}
+													>
+														<Folder class="size-4 shrink-0 text-muted-foreground" />
+														<span class="truncate">{entry.name}</span>
+													</Sidebar.MenuSubButton>
 
-											{#if entry.hasChildren}
-												<Sidebar.MenuAction
-													title={isOpen(entry.id, entry.path) ? 'Свернуть' : 'Развернуть'}
-													aria-expanded={isOpen(entry.id, entry.path)}
-													onclick={() => toggleCategory(entry.id, entry.parentId)}
-												>
-													{#if isOpen(entry.id, entry.path)}
-														<ChevronDown />
-													{:else}
-														<ChevronRight />
+													{#if entry.hasChildren}
+														<Sidebar.MenuAction
+															title={isOpen(entry.id, entry.path) ? 'Свернуть' : 'Развернуть'}
+															aria-expanded={isOpen(entry.id, entry.path)}
+															onclick={() => toggleCategory(entry.id, entry.parentId)}
+														>
+															{#if isOpen(entry.id, entry.path)}
+																<ChevronDown />
+															{:else}
+																<ChevronRight />
+															{/if}
+														</Sidebar.MenuAction>
 													{/if}
-												</Sidebar.MenuAction>
-											{/if}
-										{:else}
-											<Sidebar.MenuSubButton
-												isActive={current === '/' + entry.path}
-												href={wikiHref(entry.path)}
-												style={'padding-left: ' + (4 + entry.depth * 12) + 'px'}
-											>
-												<FileText class="size-4 shrink-0 text-muted-foreground" />
-												<span class="truncate">{entry.title}</span>
-											</Sidebar.MenuSubButton>
-										{/if}
-									</Sidebar.MenuSubItem>
-								{/each}
+												{:else}
+													<Sidebar.MenuSubButton
+														isActive={current === section.href + '/' + entry.path}
+														href={wikiHref(entry.path)}
+														style={'padding-left: ' + (4 + entry.depth * 12) + 'px'}
+													>
+														<FileText class="size-4 shrink-0 text-muted-foreground" />
+														<span class="truncate">{entry.title}</span>
+													</Sidebar.MenuSubButton>
+												{/if}
+											</Sidebar.MenuSubItem>
+										{/each}
 
-								{#if !entries.length && !error}
-									<p class="px-2 py-1 text-xs text-muted-foreground">пока пусто</p>
+										{#if !section.entries.length && !error}
+											<p class="px-2 py-1 text-xs text-muted-foreground">пока пусто</p>
+										{/if}
+									</Sidebar.MenuSub>
+								{:else}
+									<Sidebar.MenuButton aria-disabled="true" class="opacity-60">
+										<Icon />
+										<span>{section.label}</span>
+										<span class="ml-auto text-[10px] text-muted-foreground">скоро</span>
+									</Sidebar.MenuButton>
 								{/if}
-								{#if error}
-									<p class="px-2 py-1 text-xs text-destructive">{error}</p>
-								{/if}
-							</Sidebar.MenuSub>
-						</Sidebar.MenuItem>
+							</Sidebar.MenuItem>
+						{/each}
 					</Sidebar.Menu>
 				</Sidebar.GroupContent>
 			</Sidebar.Group>

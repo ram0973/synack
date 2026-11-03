@@ -12,11 +12,14 @@ await page.waitForTimeout(1500);
 await page.goto(base + '/wiki', { waitUntil: 'networkidle' });
 await page.waitForTimeout(1000);
 
-console.log('заголовок «Категории» в меню:', await page.getByText('Категории', { exact: true }).count());
-
 const wiki = page.getByRole('button', { name: 'Вики' }).first();
 const cisco = page.getByRole('link', { name: 'Cisco' }).first();
+const blog = page.getByRole('button', { name: 'Блог' }).first();
 const admin = page.getByRole('button', { name: 'Админка' }).first();
+
+console.log('Блог в меню:', await blog.count());
+console.log('Блог помечен «скоро»:', await page.getByText('скоро', { exact: true }).count());
+console.log('Блог недоступен:', await blog.getAttribute('aria-disabled'));
 
 const wikiBox = await wiki.boundingBox();
 const ciscoBox = await cisco.boundingBox();
