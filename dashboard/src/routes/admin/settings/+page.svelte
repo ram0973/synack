@@ -169,9 +169,7 @@
 		<Card.Root>
 			<Card.Header>
 				<Card.Title class="text-base">Пароль</Card.Title>
-				<Card.Description>
-					Хранится хешем argon2id. После смены остальные сессии сбрасываются.
-				</Card.Description>
+				<Card.Description>После смены пароля остальные сессии сбрасываются.</Card.Description>
 			</Card.Header>
 			<Card.Content>
 				<form class="space-y-4" onsubmit={savePassword}>
