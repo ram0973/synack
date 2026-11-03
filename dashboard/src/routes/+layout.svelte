@@ -270,34 +270,39 @@ import SidebarAutoclose from '$lib/components/sidebar-autoclose.svelte';
 															isActive={current === section.href + '/' + entry.path}
 															role="button"
 															tabindex={0}
+															title={entry.name}
 															aria-expanded={entry.hasChildren ? isOpen(entry.id, entry.path) : undefined}
-															onclick={() => toggleCategory(entry.id, entry.parentId)}
+															onclick={() =>
+																entry.hasChildren
+																	? toggleCategory(entry.id, entry.parentId)
+																	: goto(wikiHref(entry.path))}
 															onkeydown={(event: KeyboardEvent) => {
 																if (event.key === 'Enter' || event.key === ' ') {
 																	event.preventDefault();
-																	toggleCategory(entry.id, entry.parentId);
+																	if (entry.hasChildren) {
+																		toggleCategory(entry.id, entry.parentId);
+																	} else {
+																		goto(wikiHref(entry.path));
+																	}
 																}
 															}}
 															style={'padding-left: ' + (4 + entry.depth * 12) + 'px'}
 														>
 															<Folder class="size-4 shrink-0 text-muted-foreground" />
 															<span class="truncate">{entry.name}</span>
-															{#if entry.hasChildren}
-																<ChevronRight
-																	class="ml-auto size-4 shrink-0 text-muted-foreground transition-transform duration-200 {isOpen(
-																		entry.id,
-																		entry.path
-																	)
-																		? 'rotate-90'
-																		: ''}"
-																/>
-															{/if}
+															<ChevronRight
+																class="ml-auto size-4 shrink-0 text-muted-foreground transition-transform duration-200 {entry.hasChildren &&
+																isOpen(entry.id, entry.path)
+																	? 'rotate-90'
+																	: ''}"
+															/>
 														</Sidebar.MenuSubButton>
-												{:else}
+													{:else}
 													<Sidebar.MenuSubButton
 														isActive={current === section.href + '/' + entry.path}
 														href={wikiHref(entry.path)}
-														style={'padding-left: ' + (4 + entry.depth * 12) + 'px'}
+														title={entry.title}
+													style={'padding-left: ' + (14 + entry.depth * 12) + 'px'}
 													>
 														<FileText class="size-4 shrink-0 text-muted-foreground" />
 														<span class="truncate">{entry.title}</span>
@@ -341,7 +346,7 @@ import SidebarAutoclose from '$lib/components/sidebar-autoclose.svelte';
 
 		<Sidebar.Footer>
 			<div class="flex items-center justify-between px-1 py-1">
-				{#if site.author_name || site.author_avatar}
+				{#if auth.value && (site.author_name || site.author_avatar)}
 					<div class="flex min-w-0 items-center gap-2">
 						{#if site.author_avatar}
 							<img
