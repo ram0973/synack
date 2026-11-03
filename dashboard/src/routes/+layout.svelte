@@ -234,20 +234,36 @@ import SidebarAutoclose from '$lib/components/sidebar-autoclose.svelte';
 								<span>Главная</span>
 							</Sidebar.MenuButton>
 						</Sidebar.MenuItem>
+					</Sidebar.Menu>
+				</Sidebar.GroupContent>
+			</Sidebar.Group>
 
-						{#each sections as section (section.key)}
-							{@const Icon = section.icon}
-							<Sidebar.MenuItem>
-								{#if section.ready}
-									<Sidebar.MenuButton
-										isActive={current === section.href || current.startsWith(section.href + '/')}
-										onclick={() => goto(section.href)}
-									>
-										<Icon />
-										<span>{section.label}</span>
-									</Sidebar.MenuButton>
+			{#each sections as section (section.key)}
+				{@const Icon = section.icon}
+				<Sidebar.Group>
+					<Sidebar.GroupLabel class="flex items-center justify-between gap-2">
+						{#if section.ready}
+							<a
+								href={section.href}
+								class="flex items-center gap-2 text-inherit no-underline transition-colors hover:text-foreground"
+							>
+								<Icon class="size-3.5" />
+								<span>{section.label}</span>
+							</a>
+						{:else}
+							<span class="flex items-center gap-2 opacity-60">
+								<Icon class="size-3.5" />
+								<span>{section.label}</span>
+							</span>
+							<span class="text-[10px] opacity-60">скоро</span>
+						{/if}
+					</Sidebar.GroupLabel>
 
-									<Sidebar.MenuSub class="border-0 pl-1">
+					<Sidebar.GroupContent>
+						{#if section.ready}
+							<Sidebar.Menu>
+								<Sidebar.MenuItem>
+									<Sidebar.MenuSub class="mx-0 mt-1 border-l pl-2">
 										{#each section.entries as entry (section.key + '-' + entry.kind + '-' + entry.id)}
 											<Sidebar.MenuSubItem>
 												{#if entry.kind === 'category'}
@@ -290,18 +306,14 @@ import SidebarAutoclose from '$lib/components/sidebar-autoclose.svelte';
 											<p class="px-2 py-1 text-xs text-muted-foreground">пока пусто</p>
 										{/if}
 									</Sidebar.MenuSub>
-								{:else}
-									<Sidebar.MenuButton aria-disabled="true" class="opacity-60">
-										<Icon />
-										<span>{section.label}</span>
-										<span class="ml-auto text-[10px] text-muted-foreground">скоро</span>
-									</Sidebar.MenuButton>
-								{/if}
-							</Sidebar.MenuItem>
-						{/each}
-					</Sidebar.Menu>
-				</Sidebar.GroupContent>
-			</Sidebar.Group>
+								</Sidebar.MenuItem>
+							</Sidebar.Menu>
+						{:else}
+							<p class="px-2 py-1 text-xs text-muted-foreground">появится позже</p>
+						{/if}
+					</Sidebar.GroupContent>
+				</Sidebar.Group>
+			{/each}
 
 			{#if auth.value}
 				<Sidebar.Group class="mt-auto">
