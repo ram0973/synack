@@ -172,15 +172,29 @@ pub async fn serve(
 ) -> Result<Response, AppError> {
     let relative = path.trim_start_matches('/');
 
-    if relative.is_empty() || relative.contains("..") || relative.contains('\\') {
+    if relative.is_empty() || relative.contains('\\') {
         return Err(AppError::not_found("not found"));
     }
 
-    let bytes = tokio::fs::read(dir.0.join(relative))
+    // Резолвим реальный путь и проверяем, что он не вышел за пределы media_dir
+    // (защита от обхода каталога через `..`, в том числе закодированного).
+    let root = tokio::fs::canonicalize(&dir.0)
+        .await
+        .map_err(|error| AppError::internal(error.to_string()))?;
+
+    let full = tokio::fs::canonicalize(dir.0.join(relative))
         .await
         .map_err(|_| AppError::not_found("not found"))?;
 
-    let mime = mime_guess::from_path(relative).first_or_octet_stream();
+    if !full.starts_with(&root) {
+        return Err(AppError::not_found("not found"));
+    }
+
+    let bytes = tokio::fs::read(&full)
+        .await
+        .map_err(|_| AppError::not_found("not found"))?;
+
+    let mime = mime_guess::from_path(&full).first_or_octet_stream();
 
     let mut response = Response::new(Body::from(bytes));
     response.headers_mut().insert(

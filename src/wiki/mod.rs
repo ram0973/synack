@@ -299,11 +299,21 @@ async fn delete_category(
     State(pool): State<SqlitePool>,
     Path(id): Path<i64>,
 ) -> Result<StatusCode, AppError> {
-    find_category(&pool, id).await?;
+    // Проверка и удаление в одной транзакции: иначе между проверкой count()
+    // и DELETE в категорию может успеть попасть страница из другого запроса.
+    let mut tx = pool.begin().await?;
+
+    let exists: Option<i64> = sqlx::query_scalar("SELECT 1 FROM categories WHERE id = ?")
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await?;
+    if exists.is_none() {
+        return Err(AppError::not_found("category not found"));
+    }
 
     let children: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM categories WHERE parent_id = ?")
         .bind(id)
-        .fetch_one(&pool)
+        .fetch_one(&mut *tx)
         .await?;
     if children > 0 {
         return Err(AppError::conflict("category has children"));
@@ -311,7 +321,7 @@ async fn delete_category(
 
     let pages: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM pages WHERE category_id = ?")
         .bind(id)
-        .fetch_one(&pool)
+        .fetch_one(&mut *tx)
         .await?;
     if pages > 0 {
         return Err(AppError::conflict("category has pages"));
@@ -319,8 +329,10 @@ async fn delete_category(
 
     sqlx::query("DELETE FROM categories WHERE id = ?")
         .bind(id)
-        .execute(&pool)
+        .execute(&mut *tx)
         .await?;
+
+    tx.commit().await?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -839,7 +851,7 @@ async fn resolve_path(
     match page_by_path(
         State(pool.clone()),
         Query(PathQuery { path: path.clone() }),
-        viewer.clone(),
+        viewer,
     )
     .await
     {
@@ -877,13 +889,29 @@ struct Revision {
     created_at: String,
 }
 
+const MAX_REVISIONS_PER_PAGE: i64 = 50;
+
 async fn save_revision(executor: &mut sqlx::SqliteConnection, page: &Page) -> Result<(), AppError> {
     sqlx::query("INSERT INTO revisions (page_id, title, body_md) VALUES (?, ?, ?)")
         .bind(page.id)
         .bind(&page.title)
         .bind(&page.body_md)
-        .execute(executor)
+        .execute(&mut *executor)
         .await?;
+
+    // Оставляем только последние MAX_REVISIONS_PER_PAGE ревизий страницы.
+    sqlx::query(
+        "DELETE FROM revisions
+         WHERE page_id = ?
+           AND id NOT IN (
+               SELECT id FROM revisions WHERE page_id = ? ORDER BY id DESC LIMIT ?
+           )",
+    )
+    .bind(page.id)
+    .bind(page.id)
+    .bind(MAX_REVISIONS_PER_PAGE)
+    .execute(&mut *executor)
+    .await?;
 
     Ok(())
 }
@@ -901,9 +929,10 @@ async fn list_revisions(
 
     let rows = sqlx::query_as::<_, (i64, String, String, i64, String)>(
         "SELECT id, title, created_at, length(body_md), body_md
-         FROM revisions WHERE page_id = ? ORDER BY id DESC LIMIT 50",
+         FROM revisions WHERE page_id = ? ORDER BY id DESC LIMIT ?",
     )
     .bind(id)
+    .bind(MAX_REVISIONS_PER_PAGE)
     .fetch_all(&pool)
     .await?;
 
@@ -1523,7 +1552,7 @@ mod tests {
         .await
         .unwrap();
 
-        create_page(
+        let _ = create_page(
             State(pool.clone()),
             Json(CreatePage {
                 category_id: cat.id,

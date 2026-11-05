@@ -18,3 +18,10 @@ sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "migrate", "mac
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[profile.dev]
+# debug=1 даёт line-tables для бэктрейсов, но без полных DWARF (быстрее кодогенерация).
+debug = 1
+# Параллельная кодогенерация внутри каждого крейта (стандартно 256 для dev).
+# 256 — хороший баланс скорости сборки и инкрементальной компиляции.
+codegen-units = 256

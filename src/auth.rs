@@ -125,6 +125,15 @@ async fn session_valid(pool: &SqlitePool, token: &str) -> Result<bool, AppError>
     Ok(row.is_some())
 }
 
+/// Удаляет просроченные сессии. Вызывается периодически из main.
+pub async fn cleanup_expired_sessions(pool: &SqlitePool) -> Result<u64, AppError> {
+    let result = sqlx::query("DELETE FROM sessions WHERE expires_at <= datetime('now')")
+        .execute(pool)
+        .await?;
+
+    Ok(result.rows_affected())
+}
+
 pub async fn stored_hash(pool: &SqlitePool) -> Result<Option<String>, AppError> {
     let value: Option<String> =
         sqlx::query_scalar("SELECT value FROM settings WHERE key = 'password_hash'")
@@ -150,7 +159,17 @@ pub async fn set_hash(pool: &SqlitePool, hash: &str) -> Result<(), AppError> {
 pub async fn bootstrap_hash(pool: &SqlitePool) -> Result<(), AppError> {
     if stored_hash(pool).await?.is_none() {
         let hash = match std::env::var("WIKI_PASSWORD_HASH") {
-            Ok(value) if !value.trim().is_empty() => value.trim().to_string(),
+            Ok(value) if !value.trim().is_empty() => {
+                let value = value.trim().to_string();
+                // Отказываемся стартовать с битым хешем: иначе вход станет
+                // невозможным без ручной правки базы.
+                if PasswordHash::new(&value).is_err() {
+                    return Err(AppError::internal(
+                        "WIKI_PASSWORD_HASH is not a valid argon2 hash",
+                    ));
+                }
+                value
+            }
             _ => hash_password(DEFAULT_PASSWORD)?,
         };
 
@@ -281,7 +300,9 @@ pub async fn auth_guard(
     next: Next,
 ) -> Response {
     let method = request.method().clone();
-    let is_login = request.uri().path() == "/api/auth/login";
+    // внутри вложенного роутера (/api) путь уже без префикса
+    let path = request.uri().path();
+    let is_login = path == "/api/auth/login" || path == "/auth/login";
 
     let authenticated = match session_token(&request) {
         Some(token) => session_valid(&pool, &token).await.unwrap_or(false),

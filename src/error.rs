@@ -66,7 +66,13 @@ impl From<sqlx::Error> for AppError {
     fn from(err: sqlx::Error) -> Self {
         if let sqlx::Error::Database(db) = &err {
             if db.is_unique_violation() {
-                return AppError::conflict("slug already exists in this parent");
+                let message = db.message();
+                if message.contains("idx_pages_title_unique") {
+                    return AppError::conflict(
+                        "Страница с таким заголовком уже есть в этой категории",
+                    );
+                }
+                return AppError::conflict("Такой slug уже занят в этой категории");
             }
         }
         AppError::new(StatusCode::INTERNAL_SERVER_ERROR, err.to_string())

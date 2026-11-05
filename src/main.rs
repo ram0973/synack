@@ -11,7 +11,7 @@ use axum::{
     Json, Router,
 };
 use rust_embed::Embed;
-use serde_json::{json, Value};
+use serde_json::json;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePool, SqlitePoolOptions};
 
 mod auth;
@@ -44,26 +44,43 @@ async fn main() -> anyhow::Result<()> {
         PathBuf::from(std::env::var("WIKI_MEDIA").unwrap_or_else(|_| "media".to_string()));
     tokio::fs::create_dir_all(&media_dir).await?;
 
-    let app = Router::new()
-        .route("/health", get(health))
+    let cleanup_pool = pool.clone();
+    tokio::spawn(async move {
+        loop {
+            match auth::cleanup_expired_sessions(&cleanup_pool).await {
+                Ok(removed) if removed > 0 => {
+                    tracing::info!("removed {removed} expired sessions");
+                }
+                Ok(_) => {}
+                Err(error) => tracing::warn!("session cleanup failed: {error}"),
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
+        }
+    });
+
+    let api = Router::new()
         .route(
-            "/api/media",
+            "/media",
             post(media::upload).layer(DefaultBodyLimit::max(210 * 1024 * 1024)),
         )
-        .route("/media/{*path}", get(media::serve))
-        .route("/api/auth/login", post(auth::login))
-        .route("/api/auth/password", post(auth::change_password))
+        .route("/auth/login", post(auth::login))
+        .route("/auth/password", post(auth::change_password))
         .route(
-            "/api/settings",
+            "/settings",
             get(settings::get_settings).put(settings::update_settings),
         )
-        .route("/api/auth/logout", post(auth::logout))
-        .route("/api/auth/me", get(auth::me))
-        .nest("/api/wiki", wiki::router())
+        .route("/auth/logout", post(auth::logout))
+        .route("/auth/me", get(auth::me))
+        .nest("/wiki", wiki::router())
         .layer(axum::middleware::from_fn_with_state(
             pool.clone(),
             auth::auth_guard,
-        ))
+        ));
+
+    let app = Router::new()
+        .route("/health", get(health))
+        .route("/media/{*path}", get(media::serve))
+        .nest("/api", api)
         .layer(axum::Extension(media::MediaDir(media_dir)))
         .fallback(static_handler)
         .with_state(pool);
@@ -152,12 +169,18 @@ fn hash_password_command() -> anyhow::Result<Option<String>> {
     Ok(Some(auth::hash_password(password)?))
 }
 
-async fn health(State(pool): State<SqlitePool>) -> Json<Value> {
+async fn health(State(pool): State<SqlitePool>) -> Response {
     let ok = sqlx::query_scalar::<_, i64>("SELECT 1")
         .fetch_one(&pool)
         .await
         .map(|v| v == 1)
         .unwrap_or(false);
 
-    Json(json!({ "ok": ok, "version": env!("CARGO_PKG_VERSION") }))
+    let body = Json(json!({ "ok": ok, "version": env!("CARGO_PKG_VERSION") }));
+
+    if ok {
+        (StatusCode::OK, body).into_response()
+    } else {
+        (StatusCode::SERVICE_UNAVAILABLE, body).into_response()
+    }
 }

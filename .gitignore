@@ -15,3 +15,7 @@
 /e2e/results
 /test-results
 /playwright-report
+
+# локальная конфигурация сборки (sccache/mold)
+/.cargo/
+/dashboard/e2e/

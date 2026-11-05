@@ -8,7 +8,17 @@
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
-	import { ArrowDown, ArrowUp, Ellipsis, FilePlus, Folder, Pencil, Plus, Trash2 } from '@lucide/svelte';
+	import {
+		ArrowDown,
+		ArrowUp,
+		Ellipsis,
+		FilePlus,
+		Folder,
+		GripVertical,
+		Pencil,
+		Plus,
+		Trash2
+	} from '@lucide/svelte';
 	import { api, treeRows, type CategoryNode } from '$lib/api';
 	import { auth } from '$lib/auth.svelte';
 
@@ -51,6 +61,104 @@
 			toast.success(success);
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'ошибка');
+		}
+	}
+
+	type DropMode = 'before' | 'inside' | 'after';
+
+	let dragId = $state<number | null>(null);
+	let dropTarget = $state<{ id: number; mode: DropMode } | null>(null);
+
+	function startDrag(event: PointerEvent, node: CategoryNode) {
+		if (event.button !== 0) return;
+
+		event.preventDefault();
+		dragId = node.id;
+		dropTarget = null;
+
+		function cleanup() {
+			window.removeEventListener('pointermove', onMove);
+			window.removeEventListener('pointerup', onUp);
+			window.removeEventListener('pointercancel', onUp);
+		}
+
+		function onMove(moveEvent: PointerEvent) {
+			if (dragId === null) return;
+
+			const element = document.elementFromPoint(moveEvent.clientX, moveEvent.clientY);
+			const rowElement = element?.closest('[data-row-id]') as HTMLElement | null;
+
+			if (!rowElement) {
+				dropTarget = null;
+				return;
+			}
+
+			const id = Number(rowElement.dataset.rowId);
+			if (id === dragId) {
+				dropTarget = null;
+				return;
+			}
+
+			const rect = rowElement.getBoundingClientRect();
+			const ratio = (moveEvent.clientY - rect.top) / rect.height;
+			const mode: DropMode = ratio < 0.3 ? 'before' : ratio > 0.7 ? 'after' : 'inside';
+
+			dropTarget = { id, mode };
+		}
+
+		async function onUp() {
+			cleanup();
+
+			const id = dragId;
+			const target = dropTarget;
+
+			dragId = null;
+			dropTarget = null;
+
+			if (id === null || !target) return;
+			await applyMove(id, target);
+		}
+
+		window.addEventListener('pointermove', onMove);
+		window.addEventListener('pointerup', onUp);
+		window.addEventListener('pointercancel', onUp);
+	}
+
+	async function applyMove(id: number, target: { id: number; mode: DropMode }) {
+		const dragged = rows.find((row) => row.node.id === id)?.node;
+		const targetNode = rows.find((row) => row.node.id === target.id)?.node;
+
+		if (!dragged || !targetNode) return;
+
+		let parentId: number | null;
+		let position: number;
+
+		if (target.mode === 'inside') {
+			parentId = targetNode.id;
+			position = rows.filter((row) => row.node.parent_id === targetNode.id).length;
+		} else {
+			parentId = targetNode.parent_id;
+			const siblings = rows
+				.filter((row) => row.node.parent_id === parentId && row.node.id !== id)
+				.sort((a, b) => a.node.position - b.node.position);
+			const index = siblings.findIndex((row) => row.node.id === target.id);
+			position = target.mode === 'before' ? index : index + 1;
+		}
+
+		const currentSiblings = rows
+			.filter((row) => row.node.parent_id === parentId)
+			.sort((a, b) => a.node.position - b.node.position);
+		const currentIndex = currentSiblings.findIndex((row) => row.node.id === id);
+
+		if (dragged.parent_id === parentId && currentIndex === position) return;
+
+		try {
+			await api.moveCategory(id, { parent_id: parentId, position });
+			await reload();
+			toast.success('Перемещено');
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : 'не удалось переместить');
+			await reload();
 		}
 	}
 
@@ -136,9 +244,27 @@
 		{:else}
 			{#each rows as row (row.node.id)}
 				<div
-					class="flex items-center gap-2 border-b px-3 py-1.5 last:border-b-0"
+					data-row-id={row.node.id}
+					class="flex items-center gap-2 border-b px-3 py-1.5 last:border-b-0 {dragId === row.node.id
+						? 'opacity-40'
+						: ''} {dropTarget?.id === row.node.id && dropTarget.mode === 'before'
+						? 'border-t-2 border-t-primary'
+						: ''} {dropTarget?.id === row.node.id && dropTarget.mode === 'after'
+						? 'border-b-2 border-b-primary'
+						: ''} {dropTarget?.id === row.node.id && dropTarget.mode === 'inside'
+						? 'bg-accent ring-1 ring-inset ring-primary/40'
+						: ''}"
 					style={'padding-left: ' + (12 + row.depth * 18) + 'px'}
 				>
+					<button
+						type="button"
+						class="cursor-grab touch-none rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:cursor-grabbing"
+						title="Перетащить"
+						aria-label="Перетащить категорию"
+						onpointerdown={(event) => startDrag(event, row.node)}
+					>
+						<GripVertical class="size-4" />
+					</button>
 					<Folder class="size-4 shrink-0 text-muted-foreground" />
 					<span class="flex-1 truncate text-sm">{row.node.name}</span>
 					<code class="hidden text-[11px] text-muted-foreground sm:inline">/{row.path}</code>
