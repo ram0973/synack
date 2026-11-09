@@ -135,9 +135,12 @@
 
 		if (target.mode === 'inside') {
 			parentId = targetNode.id;
-			position = rows.filter((row) => row.node.parent_id === targetNode.id).length;
+			// в конец списка детей целевой категории (без самого перетаскиваемого)
+			position = rows.filter((row) => row.node.parent_id === targetNode.id && row.node.id !== id).length;
 		} else {
 			parentId = targetNode.parent_id;
+			// индекс считается среди соседей БЕЗ перетаскиваемого узла —
+			// бэкенд сам вставляет его в эту позицию и перенумерует группу
 			const siblings = rows
 				.filter((row) => row.node.parent_id === parentId && row.node.id !== id)
 				.sort((a, b) => a.node.position - b.node.position);
@@ -145,12 +148,17 @@
 			position = target.mode === 'before' ? index : index + 1;
 		}
 
+		// Нечего менять: та же родительская группа и тот же слот.
 		const currentSiblings = rows
-			.filter((row) => row.node.parent_id === parentId)
+			.filter((row) => row.node.parent_id === parentId && row.node.id !== id)
 			.sort((a, b) => a.node.position - b.node.position);
 		const currentIndex = currentSiblings.findIndex((row) => row.node.id === id);
+		const currentSlot =
+			currentIndex >= 0
+				? currentIndex
+				: currentSiblings.findIndex((row) => row.node.position > (dragged.position ?? 0));
 
-		if (dragged.parent_id === parentId && currentIndex === position) return;
+		if (dragged.parent_id === parentId && currentSlot === position) return;
 
 		try {
 			await api.moveCategory(id, { parent_id: parentId, position });

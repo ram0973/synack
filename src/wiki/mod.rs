@@ -277,20 +277,44 @@ async fn move_category(
         }
     }
 
-    let position = match body.position {
-        Some(position) => position,
-        None => next_position(&pool, parent_id).await?,
-    };
+    let mut tx = pool.begin().await?;
 
-    let row = sqlx::query_as::<_, Category>(
-        "UPDATE categories SET parent_id = ?, position = ? WHERE id = ?
-         RETURNING id, parent_id, position, name, slug",
+    // Соседи в целевой группе, без самой перемещаемой категории, в текущем порядке.
+    let siblings: Vec<i64> = sqlx::query_scalar(
+        "SELECT id FROM categories WHERE parent_id IS ? AND id != ? ORDER BY position, id",
     )
     .bind(parent_id)
-    .bind(position)
     .bind(id)
-    .fetch_one(&pool)
+    .fetch_all(&mut *tx)
     .await?;
+
+    // Куда вставить: по явно заданной позиции либо в конец группы.
+    let insert_at = match body.position {
+        Some(position) => position.clamp(0, siblings.len() as i64) as usize,
+        None => siblings.len(),
+    };
+
+    let mut order = siblings;
+    order.insert(insert_at, id);
+
+    // Перенумеровываем всю группу подряд, чтобы не оставалось совпадающих position.
+    for (index, category_id) in order.iter().enumerate() {
+        sqlx::query("UPDATE categories SET parent_id = ?, position = ? WHERE id = ?")
+            .bind(parent_id)
+            .bind(index as i64)
+            .bind(category_id)
+            .execute(&mut *tx)
+            .await?;
+    }
+
+    let row = sqlx::query_as::<_, Category>(
+        "SELECT id, parent_id, position, name, slug FROM categories WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
 
     Ok(Json(row))
 }
@@ -1535,6 +1559,46 @@ mod tests {
         .unwrap();
 
         assert_eq!(moved.parent_id, None);
+    }
+
+    #[tokio::test]
+    async fn move_reorders_siblings_without_position_collisions() {
+        let pool = test_pool().await;
+
+        let mut ids = Vec::new();
+        for name in ["A", "B", "C"] {
+            let (_, Json(cat)) = create_category(
+                State(pool.clone()),
+                Json(CreateCategory {
+                    parent_id: None,
+                    name: name.into(),
+                    slug: None,
+                }),
+            )
+            .await
+            .unwrap();
+            ids.push(cat.id);
+        }
+
+        // C перед A: раньше position у всех совпадал и порядок держался на id.
+        let _ = move_category(
+            State(pool.clone()),
+            Path(ids[2]),
+            Json(MoveCategory {
+                parent_id: Some(None),
+                position: Some(0),
+            }),
+        )
+        .await
+        .unwrap();
+
+        let Json(tree) = tree(State(pool.clone())).await.unwrap();
+        let order: Vec<&str> = tree.iter().map(|node| node.category.name.as_str()).collect();
+        assert_eq!(order, ["C", "A", "B"]);
+
+        let mut positions: Vec<i64> = tree.iter().map(|node| node.category.position).collect();
+        positions.sort();
+        assert_eq!(positions, [0, 1, 2], "position должны идти подряд без повторов");
     }
 
     #[tokio::test]
